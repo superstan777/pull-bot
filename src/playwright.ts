@@ -136,6 +136,7 @@ async function tryAssign(issueNumber: number, repo: string): Promise<void> {
 
     // Click the gear icon to open assignee picker
     await page.click('button[data-menu-trigger="assignees-select-menu"]');
+    await page.click('summary[data-menu-trigger="assignees-select-menu"]');
 
     // Wait for the picker dropdown
     await page.waitForSelector("ul[data-menu-target]", { timeout: 10_000 });
