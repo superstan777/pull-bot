@@ -148,21 +148,31 @@ async function tryAssign(issueNumber: number, repo: string): Promise<void> {
 
     await copilotBtn.click();
 
-    // Wait for button to disappear (assignment confirmed) or assignees section to update
+    // GitHub opens a confirmation modal — wait for it and click "Assign"
+    const modalAssignBtn = page
+      .locator('dialog button, [role="dialog"] button')
+      .filter({ hasText: /^assign$/i })
+      .first();
+
+    try {
+      await modalAssignBtn.waitFor({ state: "visible", timeout: 8_000 });
+      await modalAssignBtn.click();
+      console.info(
+        `[pull-bot] INFO: Clicked modal Assign button for ${repo}#${issueNumber}`,
+      );
+    } catch {
+      throw new Error(
+        `Modal "Assign" button not found after clicking "Assign to Copilot" for ${repo}#${issueNumber}`,
+      );
+    }
+
+    // Wait for modal to close (dialog gone)
     await page
-      .waitForFunction(
-        () =>
-          !document
-            .querySelector("button")
-            ?.textContent?.trim()
-            .toLowerCase()
-            .includes("assign to copilot"),
-        { timeout: 10_000 },
-      )
+      .locator('dialog, [role="dialog"]')
+      .waitFor({ state: "hidden", timeout: 10_000 })
       .catch(() => {
-        // Non-fatal — button may still be in DOM; log and continue
         console.info(
-          `[pull-bot] INFO: Could not confirm button disappearance for ${repo}#${issueNumber}, proceeding anyway`,
+          `[pull-bot] INFO: Modal did not close within timeout for ${repo}#${issueNumber}, proceeding anyway`,
         );
       });
 
