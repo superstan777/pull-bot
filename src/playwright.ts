@@ -149,9 +149,9 @@ async function tryAssign(issueNumber: number, repo: string): Promise<void> {
     await copilotBtn.click();
 
     // GitHub opens a confirmation modal — wait for it and click "Assign"
+    // The button has class CopilotAssignmentForm-module__assignButton__*
     const modalAssignBtn = page
-      .locator('dialog button, [role="dialog"] button')
-      .filter({ hasText: /^assign$/i })
+      .locator('[role="dialog"] button[class*="assignButton"]')
       .first();
 
     try {
@@ -166,9 +166,9 @@ async function tryAssign(issueNumber: number, repo: string): Promise<void> {
       );
     }
 
-    // Wait for modal to close (dialog gone)
+    // Wait for modal to close
     await page
-      .locator('dialog, [role="dialog"]')
+      .locator('[role="dialog"].prc-Dialog-Dialog-G8cDF')
       .waitFor({ state: "hidden", timeout: 10_000 })
       .catch(() => {
         console.info(
