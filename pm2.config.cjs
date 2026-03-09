@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: "pull-bot",
-      script: "tsx",
+      script: "node_modules/.bin/tsx",
       args: "src/server.ts",
       env_file: ".env",
       watch: false,
