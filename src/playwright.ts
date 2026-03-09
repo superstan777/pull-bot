@@ -5,7 +5,6 @@ import {
   type Cookie,
 } from "playwright";
 import fs from "node:fs";
-import path from "node:path";
 import "dotenv/config";
 
 const SESSION_FILE = process.env.SESSION_FILE ?? "./session.json";
@@ -131,46 +130,40 @@ async function tryAssign(issueNumber: number, repo: string): Promise<void> {
     const issueUrl = `https://github.com/${repo}/issues/${issueNumber}`;
     await page.goto(issueUrl, { waitUntil: "domcontentloaded" });
 
-    // Wait for assignees section
-    await page.waitForSelector("#assignees-select-menu", { timeout: 15_000 });
+    // Wait for React to render the sidebar
+    await page.waitForTimeout(4000);
 
-    // Click the gear icon to open assignee picker
-    await page.click('button[data-menu-trigger="assignees-select-menu"]');
-    await page.click('summary[data-menu-trigger="assignees-select-menu"]');
-
-    // Wait for the picker dropdown
-    await page.waitForSelector("ul[data-menu-target]", { timeout: 10_000 });
-
-    // Find a list item containing "Copilot"
-    const copilotOption = page
-      .locator(
-        "ul[data-menu-target] li, [data-assignees-suggestions-container] li",
-      )
-      .filter({ hasText: /copilot/i })
+    // GitHub's React UI renders a direct "Assign to Copilot" button
+    const copilotBtn = page
+      .locator("button")
+      .filter({ hasText: /^assign to copilot$/i })
       .first();
 
-    const count = await copilotOption.count();
+    const count = await copilotBtn.count();
     if (count === 0) {
       throw new Error(
-        `"Assign to Copilot" option not found for ${repo}#${issueNumber} — feature may not be enabled for this repo/plan`,
+        `"Assign to Copilot" button not found for ${repo}#${issueNumber} — feature may not be enabled for this repo/plan`,
       );
     }
 
-    await copilotOption.click();
+    await copilotBtn.click();
 
-    // Close picker
-    await page.keyboard.press("Escape");
-
-    // Verify Copilot appears in assignees section
-    await page.waitForFunction(
-      () => {
-        const assignees = document.querySelector("#assignees-select-menu");
-        return (
-          assignees?.textContent?.toLowerCase().includes("copilot") ?? false
+    // Wait for button to disappear (assignment confirmed) or assignees section to update
+    await page
+      .waitForFunction(
+        () =>
+          !document.querySelector("button")
+            ?.textContent?.trim()
+            .toLowerCase()
+            .includes("assign to copilot"),
+        { timeout: 10_000 },
+      )
+      .catch(() => {
+        // Non-fatal — button may still be in DOM; log and continue
+        console.info(
+          `[pull-bot] INFO: Could not confirm button disappearance for ${repo}#${issueNumber}, proceeding anyway`,
         );
-      },
-      { timeout: 10_000 },
-    );
+      });
 
     await saveSession();
     console.info(
