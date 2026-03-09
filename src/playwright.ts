@@ -152,7 +152,8 @@ async function tryAssign(issueNumber: number, repo: string): Promise<void> {
     await page
       .waitForFunction(
         () =>
-          !document.querySelector("button")
+          !document
+            .querySelector("button")
             ?.textContent?.trim()
             .toLowerCase()
             .includes("assign to copilot"),

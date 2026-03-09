@@ -33,7 +33,9 @@ function prompt(question: string): Promise<string> {
 
 async function main(): Promise<void> {
   if (!GITHUB_USERNAME || !GITHUB_PASSWORD) {
-    console.error("ERROR: GITHUB_USERNAME and GITHUB_PASSWORD must be set in .env");
+    console.error(
+      "ERROR: GITHUB_USERNAME and GITHUB_PASSWORD must be set in .env",
+    );
     process.exit(1);
   }
 
@@ -45,7 +47,9 @@ async function main(): Promise<void> {
   try {
     // Step 1: Login
     console.info("Navigating to GitHub login…");
-    await page.goto("https://github.com/login", { waitUntil: "domcontentloaded" });
+    await page.goto("https://github.com/login", {
+      waitUntil: "domcontentloaded",
+    });
     await page.fill("#login_field", GITHUB_USERNAME);
     await page.fill("#password", GITHUB_PASSWORD);
     await page.click('[name="commit"]');
@@ -75,7 +79,7 @@ async function main(): Promise<void> {
 
       let otpSelector: string | null = null;
       for (const sel of otpSelectors) {
-        if (await page.locator(sel).count() > 0) {
+        if ((await page.locator(sel).count()) > 0) {
           otpSelector = sel;
           break;
         }
@@ -89,8 +93,10 @@ async function main(): Promise<void> {
         await page.fill(otpSelector, code);
 
         // Submit — try a submit button, fallback to Enter
-        const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
-        if (await submitBtn.count() > 0) {
+        const submitBtn = page
+          .locator('button[type="submit"], input[type="submit"]')
+          .first();
+        if ((await submitBtn.count()) > 0) {
           await submitBtn.click();
         } else {
           await page.keyboard.press("Enter");
@@ -102,7 +108,7 @@ async function main(): Promise<void> {
       } else {
         console.error(
           "ERROR: Still on auth page but no OTP field found. Current URL:",
-          currentUrl
+          currentUrl,
         );
         console.error("Page title:", await page.title());
         await browser.close();
