@@ -65,14 +65,22 @@ app.post("/issue", (req: Request, res: Response): void => {
         res.status(200).json({ status: "assigning" });
         // Run after response is sent
         setImmediate(() => {
-          assignCopilot(issue.issue_number, issue.repo).catch(
-            (err: unknown) => {
+          assignCopilot(issue.issue_number, issue.repo)
+            .then(() => {
+              setActive(null);
+              return processNext();
+            })
+            .catch((err: unknown) => {
               console.error(
                 `[pull-bot] ERROR: assignCopilot — ${(err as Error).message}`,
               );
               setActive(null);
-            },
-          );
+              processNext().catch((e: unknown) => {
+                console.error(
+                  `[pull-bot] ERROR: processNext after failure — ${(e as Error).message}`,
+                );
+              });
+            });
         });
       } else {
         enqueue(issue);
@@ -101,6 +109,9 @@ app.post("/issue", (req: Request, res: Response): void => {
 });
 
 async function main(): Promise<void> {
+  // Clear stale active state left from a previous crashed run
+  setActive(null);
+
   try {
     await initBrowser();
     console.info("[pull-bot] INFO: Browser initialized");
@@ -110,6 +121,13 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+
+  // Drain any queue items that were left over before the previous shutdown
+  processNext().catch((err: unknown) => {
+    console.error(
+      `[pull-bot] ERROR: startup processNext — ${(err as Error).message}`,
+    );
+  });
 
   const server = app.listen(PORT, () => {
     console.info(`[pull-bot] INFO: Listening on port ${PORT}`);

@@ -31,10 +31,13 @@ async function main(): Promise<void> {
   await page.waitForTimeout(4000);
 
   // Find and click "Assign to Copilot"
-  const btn = page.locator("button").filter({ hasText: /assign to copilot/i }).first();
+  const btn = page
+    .locator("button")
+    .filter({ hasText: /assign to copilot/i })
+    .first();
   console.log("Assign to Copilot button count:", await btn.count());
 
-  if (await btn.count() === 0) {
+  if ((await btn.count()) === 0) {
     console.error("Button not found!");
     await browser.close();
     return;
@@ -45,15 +48,15 @@ async function main(): Promise<void> {
   await page.waitForTimeout(3000);
 
   // Dump all buttons visible now
-  const allButtons = await page.$$eval("button", els =>
+  const allButtons = await page.$$eval("button", (els) =>
     els
-      .filter(el => (el as HTMLElement).offsetParent !== null) // visible only
-      .map(el => ({
+      .filter((el) => (el as HTMLElement).offsetParent !== null) // visible only
+      .map((el) => ({
         text: el.textContent?.trim().slice(0, 100),
         class: el.className?.toString().slice(0, 80),
         type: el.getAttribute("type"),
         ariaLabel: el.getAttribute("aria-label"),
-      }))
+      })),
   );
   console.log("\nAll visible buttons after click:");
   console.log(JSON.stringify(allButtons, null, 2));
@@ -61,12 +64,13 @@ async function main(): Promise<void> {
   // Dump dialog/modal elements
   const dialogs = await page.$$eval(
     'dialog, [role="dialog"], [data-dialog], [data-focus-trap]',
-    els => els.map(el => ({
-      tag: el.tagName,
-      role: el.getAttribute("role"),
-      class: el.className?.toString().slice(0, 80),
-      html: el.innerHTML.slice(0, 500),
-    }))
+    (els) =>
+      els.map((el) => ({
+        tag: el.tagName,
+        role: el.getAttribute("role"),
+        class: el.className?.toString().slice(0, 80),
+        html: el.innerHTML.slice(0, 500),
+      })),
   );
   console.log("\nDialog/modal elements:");
   console.log(JSON.stringify(dialogs, null, 2));
