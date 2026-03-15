@@ -1,8 +1,13 @@
 import express, { type Request, type Response } from "express";
 import "dotenv/config";
 import { getActive, setActive, enqueue, dequeue } from "./queue.js";
-import { initBrowser, closeBrowser, assignCopilot } from "./playwright.js";
-import type { Issue, WebhookPayload } from "./types.js";
+import {
+  initBrowser,
+  closeBrowser,
+  assignCopilot,
+  markPRReady,
+} from "./playwright.js";
+import type { WebhookPayload } from "./types.js";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET ?? "";
@@ -13,12 +18,32 @@ app.use(express.json());
 function isValidPayload(body: unknown): body is WebhookPayload {
   if (typeof body !== "object" || body === null) return false;
   const b = body as Record<string, unknown>;
-  return (
-    (b.action === "opened" || b.action === "closed") &&
-    typeof b.issue_number === "number" &&
-    typeof b.repo === "string" &&
-    b.repo.length > 0
-  );
+
+  if (b.event === "issues" && b.action === "opened") {
+    return (
+      typeof b.issue_number === "number" &&
+      typeof b.repo === "string" &&
+      b.repo.length > 0
+    );
+  }
+  if (b.event === "pull_request" && b.action === "edited") {
+    return (
+      typeof b.pr_number === "number" &&
+      typeof b.repo === "string" &&
+      b.repo.length > 0 &&
+      typeof b.title === "string" &&
+      typeof b.previous_title === "string"
+    );
+  }
+  if (b.event === "pull_request" && b.action === "closed") {
+    return (
+      typeof b.pr_number === "number" &&
+      typeof b.repo === "string" &&
+      b.repo.length > 0 &&
+      typeof b.merged === "boolean"
+    );
+  }
+  return false;
 }
 
 async function processNext(): Promise<void> {
@@ -34,41 +59,36 @@ async function processNext(): Promise<void> {
     console.error(
       `[pull-bot] ERROR: processNext — failed to assign Copilot to ${next.repo}#${next.issue_number} — ${(err as Error).message}`,
     );
-    // Continue draining the queue even if one fails
     setActive(null);
   }
 }
 
-app.post("/issue", (req: Request, res: Response): void => {
+app.post("/webhook", (req: Request, res: Response): void => {
   try {
     const secret = req.headers["x-webhook-secret"];
     if (!WEBHOOK_SECRET || secret !== WEBHOOK_SECRET) {
       res.status(403).end();
       return;
     }
-
     if (!isValidPayload(req.body)) {
       res.status(400).json({ error: "Invalid payload" });
       return;
     }
 
     const payload = req.body;
-    const issue: Issue = {
-      issue_number: payload.issue_number,
-      repo: payload.repo,
-    };
 
-    if (payload.action === "opened") {
+    if (payload.event === "issues") {
+      const issue = { issue_number: payload.issue_number, repo: payload.repo };
       const active = getActive();
       if (active === null) {
         setActive(issue);
         res.status(200).json({ status: "assigning" });
-        // Run after response is sent
         setImmediate(() => {
           assignCopilot(issue.issue_number, issue.repo)
             .then(() => {
-              setActive(null);
-              return processNext();
+              console.info(
+                `[pull-bot] INFO: Copilot assigned to ${issue.repo}#${issue.issue_number}`,
+              );
             })
             .catch((err: unknown) => {
               console.error(
@@ -86,10 +106,34 @@ app.post("/issue", (req: Request, res: Response): void => {
         enqueue(issue);
         res.status(200).json({ status: "queued" });
       }
-    } else {
-      // action === "closed"
+      return;
+    }
+
+    if (payload.event === "pull_request" && payload.action === "edited") {
+      const wasWip = payload.previous_title.startsWith("[WIP]");
+      const stillWip = payload.title.startsWith("[WIP]");
+      if (!wasWip || stillWip) {
+        res.status(200).json({ status: "ignored" });
+        return;
+      }
+      res.status(200).json({ status: "marking_ready" });
+      setImmediate(() => {
+        markPRReady(payload.pr_number, payload.repo).catch((err: unknown) => {
+          console.error(
+            `[pull-bot] ERROR: markPRReady — ${(err as Error).message}`,
+          );
+        });
+      });
+      return;
+    }
+
+    if (payload.event === "pull_request" && payload.action === "closed") {
+      if (!payload.merged) {
+        res.status(200).json({ status: "ignored" });
+        return;
+      }
       setActive(null);
-      res.status(200).json({ status: "closed" });
+      res.status(200).json({ status: "dequeuing" });
       setImmediate(() => {
         processNext().catch((err: unknown) => {
           console.error(
@@ -100,7 +144,7 @@ app.post("/issue", (req: Request, res: Response): void => {
     }
   } catch (err) {
     console.error(
-      `[pull-bot] ERROR: /issue handler — ${(err as Error).message}`,
+      `[pull-bot] ERROR: /webhook handler — ${(err as Error).message}`,
     );
     if (!res.headersSent) {
       res.status(500).json({ error: "Internal server error" });
@@ -109,7 +153,6 @@ app.post("/issue", (req: Request, res: Response): void => {
 });
 
 async function main(): Promise<void> {
-  // Clear stale active state left from a previous crashed run
   setActive(null);
 
   try {
@@ -122,7 +165,6 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Drain any queue items that were left over before the previous shutdown
   processNext().catch((err: unknown) => {
     console.error(
       `[pull-bot] ERROR: startup processNext — ${(err as Error).message}`,
